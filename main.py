@@ -28,7 +28,7 @@ client = OpenAI(
 RESUME_DOC_PATH =  "/Users/akhil/Downloads/junk/AkhilRajResumeOriginal.docx" # Path where resume is in the .docx format, so that it can be provided in text format to open ai's api
 RESUME_PDF_FILE_PATH = "/Users/akhil/Downloads/junk/AkhilRajResumeOriginal.pdf" # Path where resume is in pdf format, so that it can be attached to the mail(s)
 SENDER_EMAIL_ID = 'ar2427@cornell.edu'
-START_INDEX = 222 # Which row number of database to start from? This should by default be 0 unless we are continuing from somewhere in between
+START_INDEX = 735 # Which row number of database to start from? This should by default be 0 unless we are continuing from somewhere in between
 
 def get_gmail_service():
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES, redirect_uri='http://localhost:8080/') # make sure the port is not occupied!

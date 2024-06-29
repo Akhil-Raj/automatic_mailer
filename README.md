@@ -50,4 +50,4 @@ If you need more specific help during any of these steps or integrating this int
 - Some points to take care of
     - Change the footer in the 'query_for_body' string in the code as required
     - Change the encoding when the csv is read, if it causes problems
-    - In the code, change the name of headers of the database used to read the details from the database, as per your needs
+    - In the code, change the name of headers of the database used to read the details from the database, as per your neetd
