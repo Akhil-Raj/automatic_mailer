@@ -16,7 +16,7 @@ from email.mime.application import MIMEApplication
 # Constants
 CSV_FILE_PATH = '/Users/akhil/Downloads/junk/Awards.csv'
 SCOPES = ['https://www.googleapis.com/auth/gmail.send']
-CLIENT_SECRET_FILE = './client_secret_1023062743887-q485ao3kvmtgvia0gahrr5eq9oe60tar.apps.googleusercontent.com.json'
+CLIENT_SECRET_FILE = '/Users/akhil/Downloads/junk/client_secret_594050885167-uif92btfapv25ls7ujqicb12deas4vio.apps.googleusercontent.com.json'#'./client_secret_1023062743887-q485ao3kvmtgvia0gahrr5eq9oe60tar.apps.googleusercontent.com.json'
 API_SERVICE_NAME = 'gmail'
 API_VERSION = 'v1'
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -26,6 +26,8 @@ client = OpenAI(
 )
 RESUME_DOC_PATH =  "/Users/akhil/Downloads/junk/AkhilRajResumeOriginal.docx"
 RESUME_PDF_FILE_PATH = "/Users/akhil/Downloads/junk/AkhilRajResumeOriginal.pdf"
+SENDER_EMAIL_ID = 'ar2427@cornell.edu'
+START_INDEX = 222
 
 def get_gmail_service():
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES, redirect_uri='http://localhost:8080/')
@@ -109,7 +111,7 @@ def main():
 
     count = 0
     
-    for index, row in df.iterrows():
+    for index, row in df.iloc[START_INDEX:].iterrows():
         count += 1
         project_title = row['Title']
         pi_name = row['PrincipalInvestigator']
@@ -119,7 +121,8 @@ def main():
         subject, body = generate_email_content(project_title, pi_name, project_description, resume_string)
         
         to = pi_email_id #"ar2427@cornell.edu"
-        message = create_message('akhil.raj1997@gmail.com', to, subject, body, resume_attachment)
+        # to = 'akhil.raj1997@gmail.com'
+        message = create_message(SENDER_EMAIL_ID, to, subject, body, resume_attachment)
         print(f"Sending mail number {count} to {pi_name} at {pi_email_id}")
         send_message(service, 'me', message)
 
