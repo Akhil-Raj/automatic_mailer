@@ -14,9 +14,10 @@ from email.mime.application import MIMEApplication
 
 
 # Constants
-CSV_FILE_PATH = '/Users/akhil/Downloads/junk/Awards.csv'
-SCOPES = ['https://www.googleapis.com/auth/gmail.send']
-CLIENT_SECRET_FILE = '/Users/akhil/Downloads/junk/client_secret_594050885167-uif92btfapv25ls7ujqicb12deas4vio.apps.googleusercontent.com.json'#'./client_secret_1023062743887-q485ao3kvmtgvia0gahrr5eq9oe60tar.apps.googleusercontent.com.json'
+CSV_FILE_PATH = '/Users/akhil/Downloads/junk/Awards.csv' # csv file that contains the database of research projects : Their project's description, principal investigator's name and their email id, project's title
+SCOPES = ['https://www.googleapis.com/auth/gmail.send'] # Don't change
+CLIENT_SECRET_FILE = '/Users/akhil/Downloads/junk/client_secret_594050885167-uif92btfapv25ls7ujqicb12deas4vio.apps.googleusercontent.com.json' # Details mentioned in the README file
+#'./client_secret_1023062743887-q485ao3kvmtgvia0gahrr5eq9oe60tar.apps.googleusercontent.com.json'
 API_SERVICE_NAME = 'gmail'
 API_VERSION = 'v1'
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -24,13 +25,13 @@ client = OpenAI(
     # This is the default and can be omitted
     api_key=OPENAI_API_KEY,
 )
-RESUME_DOC_PATH =  "/Users/akhil/Downloads/junk/AkhilRajResumeOriginal.docx"
-RESUME_PDF_FILE_PATH = "/Users/akhil/Downloads/junk/AkhilRajResumeOriginal.pdf"
+RESUME_DOC_PATH =  "/Users/akhil/Downloads/junk/AkhilRajResumeOriginal.docx" # Path where resume is in the .docx format, so that it can be provided in text format to open ai's api
+RESUME_PDF_FILE_PATH = "/Users/akhil/Downloads/junk/AkhilRajResumeOriginal.pdf" # Path where resume is in pdf format, so that it can be attached to the mail(s)
 SENDER_EMAIL_ID = 'ar2427@cornell.edu'
-START_INDEX = 222
+START_INDEX = 222 # Which row number of database to start from? This should by default be 0 unless we are continuing from somewhere in between
 
 def get_gmail_service():
-    flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES, redirect_uri='http://localhost:8080/')
+    flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES, redirect_uri='http://localhost:8080/') # make sure the port is not occupied!
     creds = flow.run_local_server(port=8080)
     service = build(API_SERVICE_NAME, API_VERSION, credentials=creds)
     return service
@@ -71,7 +72,7 @@ def generate_email_content(project_title, pi_name, project_description, resume_s
     subject = response.choices[0].message.content
 
 
-    query_for_body = f"I am applying to do research work for the following research project. Write a cover letter for the following info in first person using the resume given. Make sure the answer is within 150 words and MUST NOT seems to be written by an AI. The points mentioned must be supported by my experiences with as much quantified metrics as possible. Keep experience at those institutes as preference in which work was most aligned to the info below. Make sure to include the experiences of NLP Research at Cornell Tech. Also add the line 'I am attaching my resume for your reference' at the end of the mail. Footer must be 'Thanks and Regards\nAkhil Raj\nCS 2024, Cornell University(Tech Campus)\nLinkedin : https://www.linkedin.com/in/akhil-raj-810261255/\nGithub(personal) : https://github.com/Akhil-Raj\nGithub(Cornell) : https://github.com/ar2427'\n\n\n Resume : \n {resume_string} \n\n\n Research Project Info : \n Principal Investigator : {pi_name} \n Project's description : {project_description}"
+    query_for_body = f"I am applying to do research work for the following research project. Write a cover letter for the following info in first person using the resume given. Make sure the answer is within 150 words and MUST NOT seems to be written by an AI. The points mentioned must be supported by my experiences with as much quantified metrics as possible. Keep experience at those institutes as preference in which work was most aligned to the info below. Make sure to include the experiences of NLP Research at Cornell Tech. Also add the line 'I am attaching my resume for your reference' at the end of the mail. Footer must be 'Thanks and Regards\nAkhil Raj\nCS 2024, Cornell University(Tech Campus)\nLinkedin : https://www.linkedin.com/in/akhil-raj-810261255/\nGithub(personal) : https://github.com/Akhil-Raj\nGithub(Cornell) : https://github.com/ar2427'\n\n\n Resume : \n {resume_string} \n\n\n Research Project Info : \n Principal Investigator : {pi_name} \n Project's description : {project_description}" # Change the footer in the string as desired
 
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
@@ -98,7 +99,7 @@ def read_resume(RESUME_DOC_PATH):
 
 def main():
     service = get_gmail_service()
-    df = pd.read_csv(CSV_FILE_PATH, encoding="ISO-8859-1")
+    df = pd.read_csv(CSV_FILE_PATH, encoding="ISO-8859-1") # change encoding if required
     resume_string = read_resume(RESUME_DOC_PATH)
 
     # Check if file exists and attach it
@@ -113,14 +114,14 @@ def main():
     
     for index, row in df.iloc[START_INDEX:].iterrows():
         count += 1
-        project_title = row['Title']
-        pi_name = row['PrincipalInvestigator']
-        project_description = row['Abstract']
-        pi_email_id = row["PIEmailAddress"]
+        project_title = row['Title'] # Change as per your needs
+        pi_name = row['PrincipalInvestigator'] # change as per your needs
+        project_description = row['Abstract'] # change as per your needs
+        pi_email_id = row["PIEmailAddress"] # change as per your neeeds
         
         subject, body = generate_email_content(project_title, pi_name, project_description, resume_string)
         
-        to = pi_email_id #"ar2427@cornell.edu"
+        to = pi_email_id #"ar2427@cornell.edu" 
         # to = 'akhil.raj1997@gmail.com'
         message = create_message(SENDER_EMAIL_ID, to, subject, body, resume_attachment)
         print(f"Sending mail number {count} to {pi_name} at {pi_email_id}")

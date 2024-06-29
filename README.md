@@ -1,9 +1,12 @@
 # automatic_mailer
 automatically mails with LLM generated content
 
+Please note that the repo is extremely basic, and will be made professional if there is a sufficient demand.
+
 STEPS :
 
 - Get OPENAI_API_KEY(https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key)
+    - Put it in the environment variable 'OPENAI_API_KEY', for safety
 - Get google's CLIENT_SECRET_FILE
 
     - To obtain the CLIENT_SECRET_FILE for using Google APIs such as Gmail, you'll need to create a project in the Google Cloud Console, enable the Gmail API, and then create credentials to access the API. Here’s a step-by-step guide to help you through the process:
@@ -37,10 +40,14 @@ Click “Create”. Your client credentials will be displayed.
 After creating your OAuth client ID, you will see a page that shows your client ID and client secret.
 There will be a download icon (looks like a download arrow) on the right side of your client ID. Click this icon to download the JSON file.
 This downloaded JSON file is your CLIENT_SECRET_FILE. You should reference this file in your code to authenticate API requests.
-
-Final Note
+        - Final Note
 Keep the JSON file secure: This file contains sensitive information that allows access to your Google account via the API.
 Set the correct scopes: When setting up the OAuth consent screen, ensure you choose the appropriate scopes for the actions your application needs to perform.
 If you need more specific help during any of these steps or integrating this into your application, feel free to ask!
 
+- Provide CSV_FILE_PATH, CLIENT_SECRET_FILE, RESUME_DOC_PATH, RESUME_PDF_FILE_PATH, SENDER_EMAIL_ID, START_INDEX variables at the top of main.py. There usage is mentioned in the code.
 
+- Some points to take care of
+    - Change the footer in the 'query_for_body' string in the code as required
+    - Change the encoding when the csv is read, if it causes problems
+    - In the code, change the name of headers of the database used to read the details from the database, as per your needs
