@@ -14,10 +14,9 @@ from email.mime.application import MIMEApplication
 
 
 # Constants
-CSV_FILE_PATH = '/Users/akhil/Downloads/junk/Awards.csv' # csv file that contains the database of research projects : Their project's description, principal investigator's name and their email id, project's title
+CSV_FILE_PATH = './Awards.csv' # csv file that contains the database of research projects : Their project's description, principal investigator's name and their email id, project's title
 SCOPES = ['https://www.googleapis.com/auth/gmail.send'] # Don't change
-CLIENT_SECRET_FILE = '/Users/akhil/Downloads/junk/client_secret_594050885167-uif92btfapv25ls7ujqicb12deas4vio.apps.googleusercontent.com.json' # Details mentioned in the README file
-#'./client_secret_1023062743887-q485ao3kvmtgvia0gahrr5eq9oe60tar.apps.googleusercontent.com.json'
+CLIENT_SECRET_FILE = 'client_secret_1023062743887-q485ao3kvmtgvia0gahrr5eq9oe60tar.apps.googleusercontent.com.json' # Details mentioned in the README file
 API_SERVICE_NAME = 'gmail'
 API_VERSION = 'v1'
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -25,10 +24,10 @@ client = OpenAI(
     # This is the default and can be omitted
     api_key=OPENAI_API_KEY,
 )
-RESUME_DOC_PATH =  "/Users/akhil/Downloads/junk/AkhilRajResumeOriginal.docx" # Path where resume is in the .docx format, so that it can be provided in text format to open ai's api
-RESUME_PDF_FILE_PATH = "/Users/akhil/Downloads/junk/AkhilRajResumeOriginal.pdf" # Path where resume is in pdf format, so that it can be attached to the mail(s)
+RESUME_DOC_PATH =  "./AkhilRajResumeOriginal.docx" # Path where resume is in the .docx format, so that it can be provided in text format to open ai's api
+RESUME_PDF_FILE_PATH = "./AkhilRajResumeOriginal.pdf" # Path where resume is in pdf format, so that it can be attached to the mail(s)
 SENDER_EMAIL_ID = 'ar2427@cornell.edu'
-START_INDEX = 735 # Which row number of database to start from? This should by default be 0 unless we are continuing from somewhere in between
+START_INDEX = 0 # Which row number of database to start from? This should by default be 0 unless we are continuing from somewhere in between
 
 def get_gmail_service():
     flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES, redirect_uri='http://localhost:8080/') # make sure the port is not occupied!
@@ -112,6 +111,7 @@ def main():
 
     count = 0
     
+    breakpoint()
     for index, row in df.iloc[START_INDEX:].iterrows():
         count += 1
         project_title = row['Title'] # Change as per your needs
