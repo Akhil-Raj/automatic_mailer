@@ -6,8 +6,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-import openai
-from openai import OpenAI
+import subprocess
 import os
 from docx import Document
 from email.mime.application import MIMEApplication
@@ -16,15 +15,11 @@ from email.mime.application import MIMEApplication
 # Constants
 CSV_FILE_PATH = './Awards.csv' # csv file that contains the database of research projects : Their project's description, principal investigator's name and their email id, project's title
 SCOPES = ['https://www.googleapis.com/auth/gmail.send'] # Don't change
-CLIENT_SECRET_FILE = 'client_secret_1023062743887-q485ao3kvmtgvia0gahrr5eq9oe60tar.apps.googleusercontent.com.json' # Details mentioned in the README file
+CLIENT_SECRET_FILE = 'client_secret_594050885167-jihr4u58rt0b4e08ucl4h5m9re2oif6c.apps.googleusercontent.com.json' # Details mentioned in the README file
 API_SERVICE_NAME = 'gmail'
 API_VERSION = 'v1'
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-client = OpenAI(
-    # This is the default and can be omitted
-    api_key=OPENAI_API_KEY,
-)
-RESUME_DOC_PATH =  "./AkhilRajResumeOriginal.docx" # Path where resume is in the .docx format, so that it can be provided in text format to open ai's api
+CLAUDE_MODEL = "opus" # Model alias for the claude CLI ("opus", "sonnet", "haiku"). Uses your Claude subscription login
+RESUME_DOC_PATH =  "./AkhilRajResumeOriginal.docx" # Path where resume is in the .docx format, so that it can be provided in text format to Claude
 RESUME_PDF_FILE_PATH = "./AkhilRajResumeOriginal.pdf" # Path where resume is in pdf format, so that it can be attached to the mail(s)
 SENDER_EMAIL_ID = 'ar2427@cornell.edu'
 START_INDEX = 0 # Which row number of database to start from? This should by default be 0 unless we are continuing from somewhere in between
@@ -54,36 +49,24 @@ def send_message(service, user_id, message):
     except HttpError as error:
         print(f'An error occurred: {error}')
 
+def ask_claude(prompt):
+    # Runs Claude Code in headless mode, which uses the logged-in Claude subscription (run `claude` then `/login` once)
+    result = subprocess.run(
+        ["claude", "-p", "--model", CLAUDE_MODEL, "--output-format", "text"],
+        input=prompt, capture_output=True, text=True, check=True,
+    )
+    return result.stdout.strip()
+
 def generate_email_content(project_title, pi_name, project_description, resume_string):
 
     query_for_subject = f"I am applying to request to be part of the following research project. Write a subject for a mail that would be an application to be part of the research project. Make sure the answer is within 1 line and MUST NOT seems to be written by an AI. \n\n\n project description : {project_description}"
 
-    openai.api_key = OPENAI_API_KEY
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-        {
-            "role": "user",
-            "content":query_for_subject,
-        }
-        ],
-    )
-    subject = response.choices[0].message.content
+    subject = ask_claude(query_for_subject)
 
 
     query_for_body = f"I am applying to do research work for the following research project. Write a cover letter for the following info in first person using the resume given. Make sure the answer is within 150 words and MUST NOT seems to be written by an AI. The points mentioned must be supported by my experiences with as much quantified metrics as possible. Keep experience at those institutes as preference in which work was most aligned to the info below. Make sure to include the experiences of NLP Research at Cornell Tech. Also add the line 'I am attaching my resume for your reference' at the end of the mail. Footer must be 'Thanks and Regards\nAkhil Raj\nCS 2024, Cornell University(Tech Campus)\nLinkedin : https://www.linkedin.com/in/akhil-raj-810261255/\nGithub(personal) : https://github.com/Akhil-Raj\nGithub(Cornell) : https://github.com/ar2427'\n\n\n Resume : \n {resume_string} \n\n\n Research Project Info : \n Principal Investigator : {pi_name} \n Project's description : {project_description}" # Change the footer in the string as desired
 
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-        {
-            "role": "user",
-            "content": query_for_body,
-        }
-        ],
-    )
-
-    body = response.choices[0].message.content
+    body = ask_claude(query_for_body)
 
     return subject, body
 
@@ -107,26 +90,26 @@ def main():
             resume_attachment = MIMEApplication(f.read(), Name=os.path.basename(RESUME_PDF_FILE_PATH))
         resume_attachment['Content-Disposition'] = f'attachment; filename="{os.path.basename(RESUME_PDF_FILE_PATH)}"'
     else:
-        print(f"File not found: {file_path}")
+        print(f"File not found: {RESUME_PDF_FILE_PATH}")
 
     count = 0
-    
+
     breakpoint()
     for index, row in df.iloc[START_INDEX:].iterrows():
         count += 1
         project_title = row['Title'] # Change as per your needs
         pi_name = row['PrincipalInvestigator'] # change as per your needs
         project_description = row['Abstract'] # change as per your needs
-        pi_email_id = row["PIEmailAddress"] # change as per your neeeds
-        
+        pi_email_id = "ar2427@cornell.edu" # row["PIEmailAddress"] # change as per your neeeds
+
         subject, body = generate_email_content(project_title, pi_name, project_description, resume_string)
-        
-        to = pi_email_id #"ar2427@cornell.edu" 
+
+        to = pi_email_id #"ar2427@cornell.edu"
         # to = 'akhil.raj1997@gmail.com'
         message = create_message(SENDER_EMAIL_ID, to, subject, body, resume_attachment)
         print(f"Sending mail number {count} to {pi_name} at {pi_email_id}")
         send_message(service, 'me', message)
+        breakpoint()
 
 if __name__ == '__main__':
     main()
-
