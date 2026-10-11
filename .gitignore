@@ -6,3 +6,4 @@ progress.json
 progress.json.tmp
 *.log
 __pycache__/
+.venv/
