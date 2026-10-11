@@ -50,6 +50,14 @@ EMAIL_SCHEMA = { # Structure enforced on the 'career-ops email' output
     "required": ["subject", "body"],
     "additionalProperties": False,
 }
+FIT_SCHEMA = { # Structure enforced on the 'career-ops oferta' output
+    "type": "object",
+    "properties": {
+        "report": {"type": "string", "pattern": "^[0-9]+$", "description": "Number of the report in reports/ that holds this evaluation (e.g. '061'), whether it was just written, revised or already existed"},
+    },
+    "required": ["report"],
+    "additionalProperties": False,
+}
 
 def with_retries(fn, *args, **kwargs):
     # Retries fn on network/CLI failures with exponential backoff, so a dropped connection just pauses the run
@@ -140,23 +148,17 @@ def career_ops(args, json_schema=None):
         return json.loads(result.stdout)["structured_output"] if json_schema else result.stdout
     return with_retries(run_career_ops)
 
-def report_mtimes(reports_dir):
-    return {name: os.path.getmtime(os.path.join(reports_dir, name)) for name in os.listdir(reports_dir)}
-
 def evaluate_fit(jd):
     # career-ops 'oferta' saves reports/{NNN}-{slug}-{date}.md, whose header has '**Score:** X/5'
-    # A project evaluated before gets its existing report revised instead of a new one, so look for new or changed files
+    # A project evaluated before may get its report revised or simply reused, so career-ops is asked which report it used
     reports_dir = os.path.join(CAREER_OPS_DIR, "reports")
-    before = report_mtimes(reports_dir)
-    career_ops(f"oferta {jd}")
-    after = report_mtimes(reports_dir)
-    changed = [name for name, mtime in after.items() if before.get(name) != mtime]
-    if not changed:
+    report_num = career_ops(f"oferta {jd}", json_schema=FIT_SCHEMA)["report"].zfill(3)
+    reports = [name for name in os.listdir(reports_dir) if name.startswith(f"{report_num}-")]
+    if not reports:
         return None, 0.0
-    report = max(changed, key=after.get)
-    with open(os.path.join(reports_dir, report)) as f:
+    with open(os.path.join(reports_dir, reports[0])) as f:
         score = re.search(r"\*\*Score:\*\*\s*([\d.]+)", f.read())
-    return report.split("-")[0], (float(score.group(1)) if score else 0.0)
+    return report_num, (float(score.group(1)) if score else 0.0)
 
 def generate_tailored_cv(report_num):
     # career-ops 'pdf' records the generated PDF against the report in data/pdf-index.tsv (report <tab> pdf <tab> ...)
