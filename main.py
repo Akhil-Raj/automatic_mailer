@@ -183,6 +183,33 @@ def generate_email_content(report_num):
 
     return draft["subject"].strip(), draft["body"].strip()
 
+def make_jd(row):
+    # The project as career-ops sees it. Change the column names as per your needs
+    return f"Funded research project (this is a cold job application to the Principal Investigator, asking for a paid role on the project; no specific position is assumed)\n\nPrincipal Investigator : {row['PrincipalInvestigator']}\nOrganization : {row['Organization']}\nProject title : {row['Title']}\n\nProject description : {row['Abstract']}"
+
+def score_project(index, row, progress):
+    # Returns (report, score) for one project, reusing a score saved in an earlier run; None if it couldn't be scored this run
+    entry = progress.get(str(index), {})
+    if entry.get("report"):
+        return entry["report"], entry["score"]
+    try:
+        report_num, score = evaluate_fit(make_jd(row))
+    except TRANSIENT_ERRORS as error:
+        # Out of retries (e.g. a long outage): note it and move on; the next run picks this row up again
+        print(f"Giving up on row {index} for now: {error}")
+        progress[str(index)] = {"status": "failed", "error": str(error)}
+        save_progress(progress)
+        return None
+    print(f"Fit score {score}/5 for '{row['Title']}' (career-ops report {report_num})")
+    if report_num is None: # career-ops wrote no report, so the score is unknown; retry on the next run
+        print(f"No career-ops report for row {index}; marking it failed")
+        progress[str(index)] = {"status": "failed", "error": "career-ops produced no report"}
+        save_progress(progress)
+        return None
+    progress[str(index)] = {"status": "scored", "report": report_num, "score": score}
+    save_progress(progress)
+    return report_num, score
+
 def main():
     service = get_gmail_service()
     df = pd.read_csv(CSV_FILE_PATH, encoding="ISO-8859-1") # change encoding if required
@@ -191,56 +218,46 @@ def main():
 
     count = 0
 
-    for index, row in df.iterrows():
-        entry = progress.get(str(index), {})
-        if entry.get("status") in ("sent", "skipped"):
-            continue # already handled in an earlier run; "failed" rows are tried again
-        count += 1
-        project_title = row['Title'] # Change as per your needs
+    # Each PI gets at most one email, about whichever of their projects scores highest
+    pi_emails = df['PIEmailAddress'].str.strip().str.lower() # change as per your needs
+    for _, projects in df.groupby(pi_emails, sort=False):
+        if any(progress.get(str(index), {}).get("status") == "sent" for index in projects.index):
+            continue # this PI was already emailed in an earlier run
+        scores = {index: score_project(index, row, progress) for index, row in projects.iterrows()}
+        if None in scores.values():
+            continue # a project couldn't be scored, so the best one isn't known yet; the next run retries it
+
+        best = max(scores, key=lambda index: scores[index][1])
+        report_num, score = scores[best]
+        for index, (report, project_score) in scores.items():
+            if index != best or score < MIN_FIT_SCORE:
+                progress[str(index)] = {"status": "skipped", "report": report, "score": project_score}
+        save_progress(progress)
+        if score < MIN_FIT_SCORE:
+            continue
+
+        row = df.loc[best]
         pi_name = row['PrincipalInvestigator'] # change as per your needs
-        project_description = row['Abstract'] # change as per your needs
-        pi_email_id = "ar2427@cornell.edu" # row["PIEmailAddress"] # change as per your neeeds
-
-        organization = row['Organization'] # change as per your needs
-
-        jd = f"Funded research project (this is a cold job application to the Principal Investigator, asking for a paid role on the project; no specific position is assumed)\n\nPrincipal Investigator : {pi_name}\nOrganization : {organization}\nProject title : {project_title}\n\nProject description : {project_description}"
+        to = row['PIEmailAddress'].strip() # change as per your needs
+        count += 1
         try:
-            if entry.get("report"): # scored in an earlier run that failed later on; reuse it
-                report_num, score = entry["report"], entry["score"]
-            else:
-                report_num, score = evaluate_fit(jd)
-            print(f"Fit score {score}/5 for '{project_title}' (career-ops report {report_num})")
-            if report_num is None: # career-ops wrote no report, so the score is unknown; retry on the next run
-                print(f"No career-ops report for row {index}; marking it failed")
-                progress[str(index)] = {"status": "failed", "error": "career-ops produced no report"}
-                save_progress(progress)
-                continue
-            if score < MIN_FIT_SCORE:
-                progress[str(index)] = {"status": "skipped", "report": report_num, "score": score}
-                save_progress(progress)
-                continue
-            progress[str(index)] = {"status": "failed", "report": report_num, "score": score} # until the mail goes out
-            save_progress(progress)
-
             resume_attachment = make_attachment(generate_tailored_cv(report_num))
             subject, body = generate_email_content(report_num)
 
-            to = pi_email_id #"ar2427@cornell.edu"
-            # to = 'akhil.raj1997@gmail.com'
             message = create_message(SENDER_EMAIL_ID, to, subject, body, resume_attachment)
-            print(f"Sending mail number {count} to {pi_name} at {pi_email_id}")
+            print(f"Sending mail number {count} to {pi_name} at {to} about '{row['Title']}' (score {score}/5, best of {len(scores)} project(s))")
             try:
                 message_id = with_retries(send_message, service, 'me', message)
             except RefreshError as error: # login expired/revoked mid-run (e.g. 7-day limit on Testing apps)
                 print(f"Gmail login expired during the run ({error})")
                 service = get_gmail_service(force_login=True)
                 message_id = with_retries(send_message, service, 'me', message)
-            progress[str(index)] = {"status": "sent", "report": report_num, "score": score, "message_id": message_id}
+            progress[str(best)] = {"status": "sent", "report": report_num, "score": score, "message_id": message_id}
             save_progress(progress)
         except TRANSIENT_ERRORS as error:
-            # Out of retries (e.g. a long outage): note it and move on; the next run picks this row up again
-            print(f"Giving up on row {index} for now: {error}")
-            progress[str(index)] = {**progress.get(str(index), {}), "status": "failed", "error": str(error)}
+            # Out of retries (e.g. a long outage): note it and move on; the next run retries this PI, reusing the scores
+            print(f"Giving up on row {best} for now: {error}")
+            progress[str(best)] = {"status": "failed", "report": report_num, "score": score, "error": str(error)}
             save_progress(progress)
 
 if __name__ == '__main__':
