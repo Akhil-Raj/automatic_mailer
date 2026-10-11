@@ -1,53 +1,98 @@
 # automatic_mailer
-automatically mails with LLM generated content
+Automatically sends cold emails, with a tailored CV attached, to the Principal Investigators of funded research projects. It uses Claude (through the [career-ops](https://github.com/career-ops-hq/career-ops) skill) to write the content.
 
 Please note that the repo is extremely basic, and will be made professional if there is a sufficient demand.
 
-STEPS :
+## How it works
 
-- Get OPENAI_API_KEY(https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key)
-    - Put it in the environment variable 'OPENAI_API_KEY', for safety
-- Get google's CLIENT_SECRET_FILE
+For every row (research project) in the CSV, `main.py`:
 
-    - To obtain the CLIENT_SECRET_FILE for using Google APIs such as Gmail, you'll need to create a project in the Google Cloud Console, enable the Gmail API, and then create credentials to access the API. Here’s a step-by-step guide to help you through the process:
+1. Runs `/career-ops oferta` to score how well you fit the project (out of 5). Projects scoring below `MIN_FIT_SCORE` are skipped.
+2. Runs `/career-ops pdf` to generate a CV tailored to the project. If no tailored PDF is produced, it falls back to `RESUME_PDF_FILE_PATH`.
+3. Runs `/career-ops email` to draft the subject and body.
+4. Sends the email through the Gmail API with the CV attached.
 
-        - Step 1: Create a Google Cloud Project
-Go to the Google Cloud Console.
-If you haven’t already, sign in with your Google account.
-Click on "Select a project" at the top of the dashboard, then click on “New Project”.
-Enter a project name and select a billing account if applicable. Click "Create".
-        - Step 2: Enable the Gmail API
-Once your project is created and selected, navigate to the "APIs & Services" dashboard.
-Click on “+ ENABLE APIS AND SERVICES”.
-Search for "Gmail API" and select it from the list.
-Click "Enable" to activate the Gmail API for your project.
-        - Step 3: Create Credentials
-With the Gmail API enabled, go to the “Credentials” tab on the left-hand side menu.
-Click on “+ CREATE CREDENTIALS” at the top of the page.
-Select “OAuth client ID”.
-You may be prompted to configure the "OAuth consent screen" first. If so:
-Click on the “Configure consent screen” button.
-Select the “External” user type for testing, or “Internal” if your app will only be used within your organization.
-Fill out the required fields on the consent screen setup form, such as the app name, user support email, and developer contact information. Save and continue.
-You don’t need to add scopes manually on the Scopes page; just save and continue.
-Add any test users if necessary (for external applications), then save and continue.
-After setting up the consent screen, return to the “Create OAuth client ID” page:
-Application type: Choose “Web application”.
-Name your OAuth 2.0 client.
-Under “Authorized redirect URIs”, add the URI provided by your application or the tool you are using that will authenticate using this client ID. For local development, you might use something like http://localhost:8080.
-Click “Create”. Your client credentials will be displayed.
-        - Step 4: Download the JSON File
-After creating your OAuth client ID, you will see a page that shows your client ID and client secret.
-There will be a download icon (looks like a download arrow) on the right side of your client ID. Click this icon to download the JSON file.
-This downloaded JSON file is your CLIENT_SECRET_FILE. You should reference this file in your code to authenticate API requests.
-        - Final Note
-Keep the JSON file secure: This file contains sensitive information that allows access to your Google account via the API.
-Set the correct scopes: When setting up the OAuth consent screen, ensure you choose the appropriate scopes for the actions your application needs to perform.
-If you need more specific help during any of these steps or integrating this into your application, feel free to ask!
+The career-ops steps run headlessly through the `claude` CLI (`claude -p`), using your Claude subscription. No API key is needed.
 
-- Provide CSV_FILE_PATH, CLIENT_SECRET_FILE, RESUME_DOC_PATH, RESUME_PDF_FILE_PATH, SENDER_EMAIL_ID, START_INDEX variables at the top of main.py. There usage is mentioned in the code.
+The script is built for long, unattended runs:
 
-- Some points to take care of
-    - Change the footer in the 'query_for_body' string in the code as required
-    - Change the encoding when the csv is read, if it causes problems
-    - In the code, change the name of headers of the database used to read the details from the database, as per your neetd
+- **Retries:** network or Claude CLI failures are retried with exponential backoff, waiting 30s at first and doubling up to 10 min. A step gets `MAX_RETRIES` attempts, about 35 min in total, and a `claude` call that hangs longer than `CLAUDE_TIMEOUT` is killed and retried.
+- **Resumable:** every row's result is saved to `progress.json` as `sent`, `skipped` or `failed`. Rerunning the script skips rows that were already sent or skipped and retries failed ones, reusing their saved fit score. Delete `progress.json` to start over from the first row.
+- **Saved Gmail login:** the first run opens a browser to log in to Gmail and saves the login to `token.json`. Later runs reuse and refresh it. If it has expired or been revoked, at startup or in the middle of a run, the browser login opens again and the run waits until you finish.
+
+## Setup
+
+### 1. Folder layout
+
+Keep `career-ops` in the same parent folder as this repo. `main.py` finds it through a relative path:
+
+```
+some-folder/
+├── automatic_mailer/
+└── career-ops/
+```
+
+All other paths in `main.py` are relative to the `automatic_mailer` folder, so the script works from any working directory and on any machine.
+
+### 2. Claude CLI and career-ops
+
+- Install Claude Code (`npm install -g @anthropic-ai/claude-code`), run `claude` once and log in with `/login`.
+- Clone [career-ops](https://github.com/career-ops-hq/career-ops) next to this repo and set it up following its README: `npm install`, `npx playwright install chromium` (needed for the PDF CVs), then add your CV and profile.
+
+### 3. Python dependencies
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install pandas google-api-python-client google-auth-oauthlib python-docx
+```
+
+### 4. Google CLIENT_SECRET_FILE (Gmail API)
+
+You need a project in the Google Cloud Console with the Gmail API enabled and OAuth credentials:
+
+1. **Create a project:** in the [Google Cloud Console](https://console.cloud.google.com/), click "Select a project" → "New Project", name it and click "Create".
+2. **Enable the Gmail API:** go to "APIs & Services" → "+ ENABLE APIS AND SERVICES", search for "Gmail API" and click "Enable".
+3. **Configure the OAuth consent screen:** choose "External" (or "Internal" for an organization account), fill in the required fields and add yourself as a test user. You don't need to add scopes there.
+4. **Create credentials:** go to "Credentials" → "+ CREATE CREDENTIALS" → "OAuth client ID", choose "Web application" and add `http://localhost:8080/` under "Authorized redirect URIs".
+5. **Download the JSON file:** click the download icon next to your client ID and put the file in this folder. Set `CLIENT_SECRET_FILE` in `main.py` to its name.
+
+Keep this file and `token.json` private, because they give access to your Gmail. Both are in `.gitignore`.
+
+> If the consent screen is left in "Testing" status, Google expires the saved login after 7 days. The script then just asks you to log in again.
+
+### 5. Configure `main.py`
+
+Edit the constants at the top of `main.py`:
+
+| Constant | What it is |
+| --- | --- |
+| `CSV_FILE_PATH` | CSV of research projects |
+| `CLIENT_SECRET_FILE` | Google OAuth client file from step 4 |
+| `RESUME_PDF_FILE_PATH` | Fallback CV attached when career-ops doesn't produce a tailored one |
+| `SENDER_EMAIL_ID` | Gmail address the emails are sent from |
+| `CLAUDE_MODEL` | `opus`, `sonnet` or `haiku` |
+| `MIN_FIT_SCORE` | Projects scoring below this (out of 5) are skipped |
+| `MAX_RETRIES`, `RETRY_BASE_DELAY`, `RETRY_MAX_DELAY`, `CLAUDE_TIMEOUT` | Retry and timeout behaviour |
+
+Also check these:
+
+- **CSV columns:** the script reads `Title`, `PrincipalInvestigator`, `Abstract`, `Organization` and `PIEmailAddress`. Change the names in `main()` to match your CSV.
+- **CSV encoding:** the CSV is read as `ISO-8859-1`. Change it in `main()` if it causes problems.
+- **Recipient (test mode):** `pi_email_id` is currently hardcoded to the sender's address, so every email goes to you. Switch it to `row["PIEmailAddress"]` for a real run.
+
+## Running
+
+```bash
+.venv/bin/python -u main.py 2>&1 | tee -a run.log
+```
+
+For a long run, start it inside `tmux` so it survives the terminal closing. Detach with Ctrl-b then d, and reattach with `tmux attach -t mailer`. On a Mac, prefix the command with `caffeinate -i` so the machine doesn't sleep:
+
+```bash
+tmux new -s mailer
+caffeinate -i .venv/bin/python -u main.py 2>&1 | tee -a run.log
+```
+
+If the run stops for any reason, run the same command again and it continues where it left off.
+
+**Possible duplicate email:** if the connection drops right after Gmail accepts an email but before its reply arrives, the retry can send that email twice.
