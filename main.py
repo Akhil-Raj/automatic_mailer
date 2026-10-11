@@ -27,6 +27,7 @@ CLIENT_SECRET_FILE = os.path.join(SCRIPT_DIR, 'client_secret_594050885167-jihr4u
 API_SERVICE_NAME = 'gmail'
 API_VERSION = 'v1'
 CLAUDE_MODEL = "opus" # Model alias for the claude CLI ("opus", "sonnet", "haiku"). Uses your Claude subscription login
+CLAUDE_EFFORT = "xhigh" # Reasoning effort for the claude CLI ("low", "medium", "high", "xhigh", "max"). Lower is faster and uses less quota
 RESUME_DOC_PATH = os.path.join(SCRIPT_DIR, "AkhilRajResumeOriginal.docx") # Path where resume is in the .docx format, so that it can be provided in text format to Claude
 RESUME_PDF_FILE_PATH = os.path.join(SCRIPT_DIR, "AkhilRajResumeOriginal.pdf") # Path where resume is in pdf format, so that it can be attached to the mail(s)
 SENDER_EMAIL_ID = 'ar2427@cornell.edu'
@@ -123,7 +124,7 @@ def send_message(service, user_id, message):
 def ask_claude(prompt):
     # Runs Claude Code in headless mode, which uses the logged-in Claude subscription (run `claude` then `/login` once)
     result = subprocess.run(
-        ["claude", "-p", "--model", CLAUDE_MODEL, "--output-format", "text"],
+        ["claude", "-p", "--model", CLAUDE_MODEL, "--effort", CLAUDE_EFFORT, "--output-format", "text"],
         input=prompt, capture_output=True, text=True, check=True,
     )
     return result.stdout.strip()
@@ -131,7 +132,7 @@ def ask_claude(prompt):
 def career_ops(args, json_schema=None):
     # Runs the /career-ops skill from the career-ops repo headlessly (e.g. "oferta <JD>", "pdf 051", "email 051")
     # With json_schema, the claude CLI validates the final answer against it and returns it as a dict
-    cmd = ["claude", "-p", f"/career-ops {args}", "--model", CLAUDE_MODEL, "--allowedTools", CAREER_OPS_TOOLS]
+    cmd = ["claude", "-p", f"/career-ops {args}", "--model", CLAUDE_MODEL, "--effort", CLAUDE_EFFORT, "--allowedTools", CAREER_OPS_TOOLS]
     if json_schema:
         cmd += ["--output-format", "json", "--json-schema", json.dumps(json_schema)]
     def run_career_ops():
@@ -139,17 +140,23 @@ def career_ops(args, json_schema=None):
         return json.loads(result.stdout)["structured_output"] if json_schema else result.stdout
     return with_retries(run_career_ops)
 
+def report_mtimes(reports_dir):
+    return {name: os.path.getmtime(os.path.join(reports_dir, name)) for name in os.listdir(reports_dir)}
+
 def evaluate_fit(jd):
     # career-ops 'oferta' saves reports/{NNN}-{slug}-{date}.md, whose header has '**Score:** X/5'
+    # A project evaluated before gets its existing report revised instead of a new one, so look for new or changed files
     reports_dir = os.path.join(CAREER_OPS_DIR, "reports")
-    before = set(os.listdir(reports_dir))
+    before = report_mtimes(reports_dir)
     career_ops(f"oferta {jd}")
-    new_reports = sorted(set(os.listdir(reports_dir)) - before)
-    if not new_reports:
+    after = report_mtimes(reports_dir)
+    changed = [name for name, mtime in after.items() if before.get(name) != mtime]
+    if not changed:
         return None, 0.0
-    with open(os.path.join(reports_dir, new_reports[-1])) as f:
+    report = max(changed, key=after.get)
+    with open(os.path.join(reports_dir, report)) as f:
         score = re.search(r"\*\*Score:\*\*\s*([\d.]+)", f.read())
-    return new_reports[-1].split("-")[0], (float(score.group(1)) if score else 0.0)
+    return report.split("-")[0], (float(score.group(1)) if score else 0.0)
 
 def generate_tailored_cv(report_num):
     # career-ops 'pdf' records the generated PDF against the report in data/pdf-index.tsv (report <tab> pdf <tab> ...)
@@ -201,7 +208,12 @@ def main():
             else:
                 report_num, score = evaluate_fit(jd)
             print(f"Fit score {score}/5 for '{project_title}' (career-ops report {report_num})")
-            if report_num is None or score < MIN_FIT_SCORE:
+            if report_num is None: # career-ops wrote no report, so the score is unknown; retry on the next run
+                print(f"No career-ops report for row {index}; marking it failed")
+                progress[str(index)] = {"status": "failed", "error": "career-ops produced no report"}
+                save_progress(progress)
+                continue
+            if score < MIN_FIT_SCORE:
                 progress[str(index)] = {"status": "skipped", "report": report_num, "score": score}
                 save_progress(progress)
                 continue
