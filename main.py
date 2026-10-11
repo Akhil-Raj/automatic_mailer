@@ -39,7 +39,7 @@ RETRY_MAX_DELAY = 600
 CLAUDE_TIMEOUT = 1800 # Seconds before a hung claude CLI call is killed and retried
 TRANSIENT_ERRORS = (subprocess.SubprocessError, HttpError, OSError, httplib2.HttpLib2Error, TransportError, json.JSONDecodeError, KeyError)
 CAREER_OPS_DIR = os.path.join(SCRIPT_DIR, "..", "career-ops") # career-ops checkout, kept next to this folder; its /career-ops skill evaluates fit, tailors the CV and drafts the mail
-MIN_FIT_SCORE = 3.5 # Skip projects that career-ops 'oferta' scores below this (out of 5)
+MIN_FIT_SCORE = 1.0 # Skip projects that career-ops 'oferta' scores below this (out of 5)
 CAREER_OPS_TOOLS = "Read Write Edit Glob Grep Bash(node:*) Bash(npm:*)" # Tools pre-approved for headless career-ops runs (no one is there to answer permission prompts)
 EMAIL_SCHEMA = { # Structure enforced on the 'career-ops email' output
     "type": "object",
