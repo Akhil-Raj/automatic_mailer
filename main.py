@@ -28,8 +28,6 @@ API_SERVICE_NAME = 'gmail'
 API_VERSION = 'v1'
 CLAUDE_MODEL = "sonnet" # Model alias for the claude CLI ("opus", "sonnet", "haiku"). Uses your Claude subscription login
 CLAUDE_EFFORT = "medium" # Reasoning effort for the claude CLI ("low", "medium", "high", "xhigh", "max"). Lower is faster and uses less quota
-RESUME_DOC_PATH = os.path.join(SCRIPT_DIR, "AkhilRajResumeOriginal.docx") # Path where resume is in the .docx format, so that it can be provided in text format to Claude
-RESUME_PDF_FILE_PATH = os.path.join(SCRIPT_DIR, "AkhilRajResumeOriginal.pdf") # Path where resume is in pdf format, so that it can be attached to the mail(s)
 SENDER_EMAIL_ID = 'ar2427@cornell.edu'
 TOKEN_FILE = os.path.join(SCRIPT_DIR, 'token.json') # Saved Gmail login, so restarts don't need the browser. Delete it to log in again
 PROGRESS_FILE = os.path.join(SCRIPT_DIR, 'progress.json') # Which rows are done; rerunning the script resumes from here. Delete it to start over from row 0
@@ -39,7 +37,7 @@ RETRY_MAX_DELAY = 600
 CLAUDE_TIMEOUT = 1800 # Seconds before a hung claude CLI call is killed and retried
 TRANSIENT_ERRORS = (subprocess.SubprocessError, HttpError, OSError, httplib2.HttpLib2Error, TransportError, json.JSONDecodeError, KeyError)
 CAREER_OPS_DIR = os.path.join(SCRIPT_DIR, "..", "career-ops") # career-ops checkout, kept next to this folder; its /career-ops skill evaluates fit, tailors the CV and drafts the mail
-MIN_FIT_SCORE = 1.0 # Skip projects that career-ops 'oferta' scores below this (out of 5)
+MIN_FIT_SCORE = 2.0 # Skip projects that career-ops 'oferta' scores below this (out of 5)
 CAREER_OPS_TOOLS = "Read Write Edit Glob Grep Bash(node:*) Bash(npm:*)" # Tools pre-approved for headless career-ops runs (no one is there to answer permission prompts)
 EMAIL_SCHEMA = { # Structure enforced on the 'career-ops email' output
     "type": "object",
@@ -162,13 +160,17 @@ def evaluate_fit(jd):
 
 def generate_tailored_cv(report_num):
     # career-ops 'pdf' records the generated PDF against the report in data/pdf-index.tsv (report <tab> pdf <tab> ...)
-    career_ops(f"pdf {report_num}")
-    pdf_path = RESUME_PDF_FILE_PATH # fallback if no tailored PDF was generated
+    # It declines below a 4.0 score unless told to override, and a headless run can't answer its question, so the override is given upfront
+    career_ops(f"pdf {report_num} (The user explicitly overrides the 4.0 score threshold for this report: generate the tailored CV PDF now. This is a deliberate cold application to the PI; do not ask for confirmation.)")
+    pdf_path = None
     with open(os.path.join(CAREER_OPS_DIR, "data", "pdf-index.tsv")) as f:
         for line in f:
             cols = line.rstrip("\n").split("\t")
             if len(cols) > 1 and cols[0] == report_num:
                 pdf_path = os.path.join(CAREER_OPS_DIR, cols[1])
+    if not pdf_path or not os.path.exists(pdf_path):
+        # Never send without a tailored CV; the PI is marked failed and retried on the next run
+        raise FileNotFoundError(f"career-ops produced no tailored CV for report {report_num}")
     return pdf_path
 
 def make_attachment(path):

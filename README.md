@@ -8,7 +8,7 @@ Please note that the repo is extremely basic, and will be made professional if t
 For every row (research project) in the CSV, `main.py`:
 
 1. Runs `/career-ops oferta` to score how well you fit the project (out of 5). Projects scoring below `MIN_FIT_SCORE` are skipped.
-2. Runs `/career-ops pdf` to generate a CV tailored to the project. If no tailored PDF is produced, it falls back to `RESUME_PDF_FILE_PATH`.
+2. Runs `/career-ops pdf` to generate a CV tailored to the project. If no tailored PDF is produced, the email is not sent and the row is retried on the next run.
 3. Runs `/career-ops email` to draft the subject and body.
 4. Sends the email through the Gmail API with the CV attached.
 
@@ -68,7 +68,6 @@ Edit the constants at the top of `main.py`:
 | --- | --- |
 | `CSV_FILE_PATH` | CSV of research projects |
 | `CLIENT_SECRET_FILE` | Google OAuth client file from step 4 |
-| `RESUME_PDF_FILE_PATH` | Fallback CV attached when career-ops doesn't produce a tailored one |
 | `SENDER_EMAIL_ID` | Gmail address the emails are sent from |
 | `CLAUDE_MODEL` | `opus`, `sonnet` or `haiku` |
 | `MIN_FIT_SCORE` | Projects scoring below this (out of 5) are skipped |
