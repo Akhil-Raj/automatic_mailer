@@ -1,16 +1,15 @@
 # automatic_mailer
-Automatically sends cold emails, with a tailored CV attached, to the Principal Investigators of funded research projects. It uses Claude (through the [career-ops](https://github.com/career-ops-hq/career-ops) skill) to write the content.
+Automatically sends personalised cold emails, with your CV attached, to the Principal Investigators of funded research projects. It uses Claude (through the [career-ops](https://github.com/career-ops-hq/career-ops) skill) to write the content.
 
 Please note that the repo is extremely basic, and will be made professional if there is a sufficient demand.
 
 ## How it works
 
-For every row (research project) in the CSV, `main.py`:
+Each PI gets at most one email. For every PI in the CSV (a PI can have several projects), `main.py`:
 
-1. Runs `/career-ops oferta` to score how well you fit the project (out of 5). Projects scoring below `MIN_FIT_SCORE` are skipped.
-2. Runs `/career-ops pdf` to generate a CV tailored to the project. If no tailored PDF is produced, the email is not sent and the row is retried on the next run.
-3. Runs `/career-ops email` to draft the subject and body.
-4. Sends the email through the Gmail API with the CV attached.
+1. Runs `/career-ops oferta` on each of the PI's projects to score how well you fit it (out of 5), and picks the highest-scoring one. If it scores below `MIN_FIT_SCORE`, the PI is skipped.
+2. Runs `/career-ops email` to draft a subject and body personalised to that project.
+3. Sends the email through the Gmail API with the CV at `CV_PDF_PATH` attached (the same CV for every PI). `generate_tailored_cv()` can tailor a CV per project with `/career-ops pdf` instead, but isn't used.
 
 The career-ops steps run headlessly through the `claude` CLI (`claude -p`), using your Claude subscription. No API key is needed.
 
@@ -70,6 +69,8 @@ Edit the constants at the top of `main.py`:
 | `CLIENT_SECRET_FILE` | Google OAuth client file from step 4 |
 | `SENDER_EMAIL_ID` | Gmail address the emails are sent from |
 | `CLAUDE_MODEL` | `opus`, `sonnet` or `haiku` |
+| `CLAUDE_EFFORT` | `low`, `medium`, `high`, `xhigh` or `max`; lower is faster and uses less of your Claude limit |
+| `CV_PDF_PATH` | CV attached to every email (inside the career-ops folder, which isn't in git, so copy it to the server separately) |
 | `MIN_FIT_SCORE` | Projects scoring below this (out of 5) are skipped |
 | `MAX_RETRIES`, `RETRY_BASE_DELAY`, `RETRY_MAX_DELAY`, `CLAUDE_TIMEOUT` | Retry and timeout behaviour |
 

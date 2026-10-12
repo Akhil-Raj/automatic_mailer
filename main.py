@@ -37,6 +37,7 @@ RETRY_MAX_DELAY = 600
 CLAUDE_TIMEOUT = 1800 # Seconds before a hung claude CLI call is killed and retried
 TRANSIENT_ERRORS = (subprocess.SubprocessError, HttpError, OSError, httplib2.HttpLib2Error, TransportError, json.JSONDecodeError, KeyError)
 CAREER_OPS_DIR = os.path.join(SCRIPT_DIR, "..", "career-ops") # career-ops checkout, kept next to this folder; its /career-ops skill evaluates fit, tailors the CV and drafts the mail
+CV_PDF_PATH = os.path.join(CAREER_OPS_DIR, "output", "cv-akhil-raj-general-2026-10-12.pdf") # General CV attached to every mail (the email itself is personalised per project)
 MIN_FIT_SCORE = 2.0 # Skip projects that career-ops 'oferta' scores below this (out of 5)
 CAREER_OPS_TOOLS = "Read Write Edit Glob Grep Bash(node:*) Bash(npm:*)" # Tools pre-approved for headless career-ops runs (no one is there to answer permission prompts)
 EMAIL_SCHEMA = { # Structure enforced on the 'career-ops email' output
@@ -216,6 +217,9 @@ def main():
     service = get_gmail_service()
     df = pd.read_csv(CSV_FILE_PATH, encoding="ISO-8859-1") # change encoding if required
 
+    if not os.path.exists(CV_PDF_PATH):
+        raise SystemExit(f"CV not found at {CV_PDF_PATH}; fix CV_PDF_PATH before running")
+
     progress = load_progress()
 
     count = 0
@@ -243,7 +247,7 @@ def main():
         to = row['PIEmailAddress'].strip() # change as per your needs
         count += 1
         try:
-            resume_attachment = make_attachment(generate_tailored_cv(report_num))
+            resume_attachment = make_attachment(CV_PDF_PATH) # generate_tailored_cv(report_num) would tailor one per project instead
             subject, body = generate_email_content(report_num)
 
             message = create_message(SENDER_EMAIL_ID, to, subject, body, resume_attachment)
