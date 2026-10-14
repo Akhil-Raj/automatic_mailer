@@ -1,5 +1,5 @@
 # automatic_mailer
-Automatically sends personalised cold emails, with your CV attached, to the Principal Investigators of funded research projects. It uses Claude (through the [career-ops](https://github.com/career-ops-hq/career-ops) skill) to write the content.
+Automatically sends personalised cold emails, with your CV attached, to the Principal Investigators of funded research projects. It uses Gemini through Antigravity CLI, with Claude as the fallback (both through the [career-ops](https://github.com/career-ops-hq/career-ops) skill), to write the content.
 
 Please note that the repo is extremely basic, and will be made professional if there is a sufficient demand.
 
@@ -11,11 +11,11 @@ Each PI gets at most one email. For every PI in the CSV (a PI can have several p
 2. Runs `/career-ops email` to draft a subject and body personalised to that project.
 3. Sends the email through the Gmail API with the CV at `CV_PDF_PATH` attached (the same CV for every PI). `generate_tailored_cv()` can tailor a CV per project with `/career-ops pdf` instead, but isn't used.
 
-The career-ops steps run headlessly through the `claude` CLI (`claude -p`), using your Claude subscription. No API key is needed.
+Each career-ops step runs headlessly through Antigravity CLI (`agy -p`, with `AGY_MODEL`), using your Google AI Pro login, to save Claude quota. If that fails, for example once its quota is used up, the same step runs through the `claude` CLI (`claude -p`), using your Claude subscription. No API keys are needed. Antigravity has no per-tool allow list, so it runs with all permissions (`--dangerously-skip-permissions`).
 
 The script is built for long, unattended runs:
 
-- **Retries:** network or Claude CLI failures are retried with exponential backoff, waiting 30s at first and doubling up to 10 min. A step gets `MAX_RETRIES` attempts, about 35 min in total, and a `claude` call that hangs longer than `CLAUDE_TIMEOUT` is killed and retried.
+- **Retries:** network or CLI failures (when both Antigravity and Claude fail) are retried with exponential backoff, waiting 30s at first and doubling up to 10 min. A step gets `MAX_RETRIES` attempts, about 35 min in total, and a `claude` call that hangs longer than `CLAUDE_TIMEOUT` is killed and retried.
 - **Resumable:** every row's result is saved to `progress.json` as `sent`, `skipped` or `failed`. Rerunning the script skips rows that were already sent or skipped and retries failed ones, reusing their saved fit score. Delete `progress.json` to start over from the first row.
 - **Saved Gmail login:** the first run opens a browser to log in to Gmail and saves the login to `token.json`. Later runs reuse and refresh it. If it has expired or been revoked, at startup or in the middle of a run, the browser login opens again and the run waits until you finish.
 
@@ -33,8 +33,9 @@ some-folder/
 
 All other paths in `main.py` are relative to the `automatic_mailer` folder, so the script works from any working directory and on any machine.
 
-### 2. Claude CLI and career-ops
+### 2. Antigravity CLI, Claude CLI and career-ops
 
+- Install Antigravity CLI (`curl -fsSL https://antigravity.google/cli/install.sh | bash`), run `agy` once and sign in with Google OAuth using the account that has Google AI Pro. Over SSH it prints a link and asks for the code the browser shows.
 - Install Claude Code (`npm install -g @anthropic-ai/claude-code`), run `claude` once and log in with `/login`.
 - Clone [career-ops](https://github.com/career-ops-hq/career-ops) next to this repo and set it up following its README: `npm install`, `npx playwright install chromium` (needed for the PDF CVs), then add your CV and profile.
 
@@ -68,7 +69,8 @@ Edit the constants at the top of `main.py`:
 | `CSV_FILE_PATH` | CSV of research projects |
 | `CLIENT_SECRET_FILE` | Google OAuth client file from step 4 |
 | `SENDER_EMAIL_ID` | Gmail address the emails are sent from |
-| `CLAUDE_MODEL` | `opus`, `sonnet` or `haiku` |
+| `AGY_MODEL` | Antigravity model tried first, e.g. `gemini-3.8-flash-medium` (`agy models` lists them) |
+| `CLAUDE_MODEL` | Fallback Claude model: `opus`, `sonnet` or `haiku` |
 | `CLAUDE_EFFORT` | `low`, `medium`, `high`, `xhigh` or `max`; lower is faster and uses less of your Claude limit |
 | `CV_PDF_PATH` | CV attached to every email (inside the career-ops folder, which isn't in git, so copy it to the server separately) |
 | `MIN_FIT_SCORE` | Projects scoring below this (out of 5) are skipped |

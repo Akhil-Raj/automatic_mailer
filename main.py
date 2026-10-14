@@ -28,13 +28,14 @@ API_SERVICE_NAME = 'gmail'
 API_VERSION = 'v1'
 CLAUDE_MODEL = "sonnet" # Model alias for the claude CLI ("opus", "sonnet", "haiku"). Uses your Claude subscription login
 CLAUDE_EFFORT = "medium" # Reasoning effort for the claude CLI ("low", "medium", "high", "xhigh", "max"). Lower is faster and uses less quota
+AGY_MODEL = "gemini-3.8-flash-medium" # Model for Antigravity CLI (agy), tried before claude to save Claude quota; uses your Google AI Pro login. 'agy models' lists the options
 SENDER_EMAIL_ID = 'ar2427@cornell.edu'
 TOKEN_FILE = os.path.join(SCRIPT_DIR, 'token.json') # Saved Gmail login, so restarts don't need the browser. Delete it to log in again
 PROGRESS_FILE = os.path.join(SCRIPT_DIR, 'progress.json') # Which rows are done; rerunning the script resumes from here. Delete it to start over from row 0
 MAX_RETRIES = 8 # Attempts per network step before giving up on a row (it will be retried on the next run)
 RETRY_BASE_DELAY = 30 # Seconds before the first retry; doubles each time up to RETRY_MAX_DELAY (~35 min of retrying in total)
 RETRY_MAX_DELAY = 600
-CLAUDE_TIMEOUT = 1800 # Seconds before a hung claude CLI call is killed and retried
+CLAUDE_TIMEOUT = 1800 # Seconds before a hung agy/claude CLI call is killed
 TRANSIENT_ERRORS = (subprocess.SubprocessError, HttpError, OSError, httplib2.HttpLib2Error, TransportError, json.JSONDecodeError, KeyError)
 CAREER_OPS_DIR = os.path.join(SCRIPT_DIR, "..", "career-ops") # career-ops checkout, kept next to this folder; its /career-ops skill evaluates fit, tailors the CV and drafts the mail
 CV_PDF_PATH = os.path.join(CAREER_OPS_DIR, "output", "cv-akhil-raj-general-2026-10-12.pdf") # General CV attached to every mail (the email itself is personalised per project)
@@ -138,13 +139,24 @@ def ask_claude(prompt):
 
 def career_ops(args, json_schema=None):
     # Runs the /career-ops skill from the career-ops repo headlessly (e.g. "oferta <JD>", "pdf 051", "email 051")
-    # With json_schema, the claude CLI validates the final answer against it and returns it as a dict
-    cmd = ["claude", "-p", f"/career-ops {args}", "--model", CLAUDE_MODEL, "--effort", CLAUDE_EFFORT, "--allowedTools", CAREER_OPS_TOOLS]
+    # Antigravity CLI (Gemini) goes first to save Claude quota; if it fails (e.g. its quota is used up), the claude CLI does the same step
+    # With json_schema, both CLIs validate the final answer against it and return it as a dict under "structured_output"
+    # agy has no per-tool allow list, so it gets all permissions (no one is there to answer its prompts)
+    agy_cmd = ["agy", "-p", f"/career-ops {args}", "--model", AGY_MODEL, "--dangerously-skip-permissions"]
+    claude_cmd = ["claude", "-p", f"/career-ops {args}", "--model", CLAUDE_MODEL, "--effort", CLAUDE_EFFORT, "--allowedTools", CAREER_OPS_TOOLS]
     if json_schema:
-        cmd += ["--output-format", "json", "--json-schema", json.dumps(json_schema)]
-    def run_career_ops():
+        agy_cmd += ["--output-format", "json", "--json-schema", json.dumps(json_schema)]
+        claude_cmd += ["--output-format", "json", "--json-schema", json.dumps(json_schema)]
+    def run(cmd):
         result = subprocess.run(cmd, cwd=CAREER_OPS_DIR, capture_output=True, text=True, check=True, timeout=CLAUDE_TIMEOUT)
         return json.loads(result.stdout)["structured_output"] if json_schema else result.stdout
+    def run_career_ops():
+        try:
+            return run(agy_cmd)
+        except TRANSIENT_ERRORS as error:
+            details = getattr(error, 'stderr', None) or error
+            print(f"Antigravity failed ({str(details).strip()[-300:]}); using Claude for this step")
+            return run(claude_cmd)
     return with_retries(run_career_ops)
 
 def evaluate_fit(jd):
