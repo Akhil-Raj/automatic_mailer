@@ -28,7 +28,8 @@ API_SERVICE_NAME = 'gmail'
 API_VERSION = 'v1'
 CLAUDE_MODEL = "sonnet" # Model alias for the claude CLI ("opus", "sonnet", "haiku"). Uses your Claude subscription login
 CLAUDE_EFFORT = "medium" # Reasoning effort for the claude CLI ("low", "medium", "high", "xhigh", "max"). Lower is faster and uses less quota
-AGY_MODEL = "gemini-3.8-flash-medium" # Model for Antigravity CLI (agy), tried before claude to save Claude quota; uses your Google AI Pro login. 'agy models' lists the options
+AGY_MODEL = "gemini-3.8-flash-medium" # Model for Antigravity CLI (agy), used once Claude's 5-hour usage reaches CLAUDE_USAGE_CAP; uses your Google AI Pro login. 'agy models' lists the options
+CLAUDE_USAGE_CAP = 90 # % of Claude's 5-hour limit from which steps go to Antigravity instead, leaving the rest for your own Claude use
 SENDER_EMAIL_ID = 'ar2427@cornell.edu'
 TOKEN_FILE = os.path.join(SCRIPT_DIR, 'token.json') # Saved Gmail login, so restarts don't need the browser. Delete it to log in again
 PROGRESS_FILE = os.path.join(SCRIPT_DIR, 'progress.json') # Which rows are done; rerunning the script resumes from here. Delete it to start over from row 0
@@ -137,9 +138,22 @@ def ask_claude(prompt):
     )
     return result.stdout.strip()
 
+def claude_usage():
+    # % of Claude's 5-hour limit used so far, as '/usage' reports it ("Current session: 42% used"); None if it can't be read
+    # '/usage' is a local command, so this makes no model call and uses no tokens
+    try:
+        result = subprocess.run(["claude", "-p", "/usage"], capture_output=True, text=True, timeout=120)
+    except (subprocess.SubprocessError, OSError):
+        return None
+    match = re.search(r"Current session: (\d+)% used", result.stdout)
+    return int(match.group(1)) if match else None
+
+last_cli = None # Which CLI the previous step chose, so the log notes each switch
+
 def career_ops(args, json_schema=None):
     # Runs the /career-ops skill from the career-ops repo headlessly (e.g. "oferta <JD>", "pdf 051", "email 051")
-    # Antigravity CLI (Gemini) goes first to save Claude quota; if it fails (e.g. its quota is used up), the claude CLI does the same step
+    # Claude does the step while its 5-hour usage is under CLAUDE_USAGE_CAP, with Antigravity CLI (Gemini) taking over if it fails
+    # From the cap on, Antigravity does it (no Claude fallback, so the rest of the Claude limit stays free); Claude is back after the reset
     # With json_schema, both CLIs validate the final answer against it and return it as a dict under "structured_output"
     # agy has no per-tool allow list, so it gets all permissions (no one is there to answer its prompts)
     agy_cmd = ["agy", "-p", f"/career-ops {args}", "--model", AGY_MODEL, "--dangerously-skip-permissions"]
@@ -151,12 +165,20 @@ def career_ops(args, json_schema=None):
         result = subprocess.run(cmd, cwd=CAREER_OPS_DIR, capture_output=True, text=True, check=True, timeout=CLAUDE_TIMEOUT)
         return json.loads(result.stdout)["structured_output"] if json_schema else result.stdout
     def run_career_ops():
-        try:
-            return run(agy_cmd)
-        except TRANSIENT_ERRORS as error:
-            details = getattr(error, 'stderr', None) or error
-            print(f"Antigravity failed ({str(details).strip()[-300:]}); using Claude for this step")
-            return run(claude_cmd)
+        global last_cli
+        usage = claude_usage()
+        cli = "claude" if usage is not None and usage < CLAUDE_USAGE_CAP else "agy"
+        if cli != last_cli:
+            shown = "unknown" if usage is None else f"{usage}%"
+            print(f"Claude 5-hour usage {shown} (cap {CLAUDE_USAGE_CAP}%): using {'Claude' if cli == 'claude' else 'Antigravity (Gemini)'} from here")
+            last_cli = cli
+        if cli == "claude":
+            try:
+                return run(claude_cmd)
+            except TRANSIENT_ERRORS as error:
+                details = getattr(error, 'stderr', None) or error
+                print(f"Claude failed ({str(details).strip()[-300:]}); using Antigravity for this step")
+        return run(agy_cmd)
     return with_retries(run_career_ops)
 
 def evaluate_fit(jd):
