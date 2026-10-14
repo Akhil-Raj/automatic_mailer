@@ -69,7 +69,7 @@ Edit the constants at the top of `main.py`:
 | `CSV_FILE_PATH` | CSV of research projects |
 | `CLIENT_SECRET_FILE` | Google OAuth client file from step 4 |
 | `SENDER_EMAIL_ID` | Gmail address the emails are sent from |
-| `AGY_MODEL` | Antigravity model tried first, e.g. `gemini-3.8-flash-medium` (`agy models` lists them) |
+| `AGY_MODEL` | Antigravity model tried first, e.g. `gemini-3.8-flash-low` (`agy models` lists them) |
 | `CLAUDE_MODEL` | Fallback Claude model: `opus`, `sonnet` or `haiku` |
 | `CLAUDE_EFFORT` | `low`, `medium`, `high`, `xhigh` or `max`; lower is faster and uses less of your Claude limit |
 | `CV_PDF_PATH` | CV attached to every email (inside the career-ops folder, which isn't in git, so copy it to the server separately) |
