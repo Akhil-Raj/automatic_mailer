@@ -11,7 +11,7 @@ Each PI gets at most one email. For every PI in the CSV (a PI can have several p
 2. Runs `/career-ops email` to draft a subject and body personalised to that project.
 3. Sends the email through the Gmail API with the CV at `CV_PDF_PATH` attached (the same CV for every PI). `generate_tailored_cv()` can tailor a CV per project with `/career-ops pdf` instead, but isn't used.
 
-Each career-ops step runs headlessly. Before each step the script reads your Claude 5-hour usage with `claude -p /usage`, a local command that uses no tokens:
+Each career-ops step runs headlessly. Before each step the script checks your Claude 5-hour usage with `claude -p /usage`, a local command that uses no tokens. A reading takes about 20s, so it's reused for `USAGE_CHECK_INTERVAL` (5 min), and usage can go a few percent past the cap before the switch:
 
 - **Below `CLAUDE_USAGE_CAP` (90%):** the step runs through the `claude` CLI (`claude -p`, with `CLAUDE_MODEL`), using your Claude subscription. If Claude fails, the same step runs through Antigravity instead.
 - **At or above the cap, or if the usage can't be read:** the step runs through Antigravity CLI (`agy -p`, with `AGY_MODEL`), using your Google AI Pro login. Claude isn't used even as a fallback, so the rest of your Claude limit stays free for your own use. Once the 5-hour window resets, steps go back to Claude.
@@ -76,7 +76,7 @@ Edit the constants at the top of `main.py`:
 | `SENDER_EMAIL_ID` | Gmail address the emails are sent from |
 | `CLAUDE_MODEL` | Claude model: `opus`, `sonnet` or `haiku` |
 | `AGY_MODEL` | Antigravity model, e.g. `gemini-3.8-flash-medium` (`agy models` lists them) |
-| `CLAUDE_USAGE_CAP` | % of the Claude 5-hour limit from which steps go to Antigravity |
+| `CLAUDE_USAGE_CAP`, `USAGE_CHECK_INTERVAL` | % of the Claude 5-hour limit from which steps go to Antigravity, and how long a usage reading is reused |
 | `CLAUDE_EFFORT` | `low`, `medium`, `high`, `xhigh` or `max`; lower is faster and uses less of your Claude limit |
 | `CV_PDF_PATH` | CV attached to every email (inside the career-ops folder, which isn't in git, so copy it to the server separately) |
 | `MIN_FIT_SCORE` | Projects scoring below this (out of 5) are skipped |

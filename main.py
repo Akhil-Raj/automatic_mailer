@@ -30,6 +30,7 @@ CLAUDE_MODEL = "sonnet" # Model alias for the claude CLI ("opus", "sonnet", "hai
 CLAUDE_EFFORT = "medium" # Reasoning effort for the claude CLI ("low", "medium", "high", "xhigh", "max"). Lower is faster and uses less quota
 AGY_MODEL = "gemini-3.8-flash-medium" # Model for Antigravity CLI (agy), used once Claude's 5-hour usage reaches CLAUDE_USAGE_CAP; uses your Google AI Pro login. 'agy models' lists the options
 CLAUDE_USAGE_CAP = 90 # % of Claude's 5-hour limit from which steps go to Antigravity instead, leaving the rest for your own Claude use
+USAGE_CHECK_INTERVAL = 300 # Seconds a Claude usage reading is reused; a reading takes ~20s, too slow to repeat before every step
 SENDER_EMAIL_ID = 'ar2427@cornell.edu'
 TOKEN_FILE = os.path.join(SCRIPT_DIR, 'token.json') # Saved Gmail login, so restarts don't need the browser. Delete it to log in again
 PROGRESS_FILE = os.path.join(SCRIPT_DIR, 'progress.json') # Which rows are done; rerunning the script resumes from here. Delete it to start over from row 0
@@ -138,15 +139,22 @@ def ask_claude(prompt):
     )
     return result.stdout.strip()
 
+usage_reading = (None, 0.0) # Last Claude usage reading and when it was taken
+
 def claude_usage():
     # % of Claude's 5-hour limit used so far, as '/usage' reports it ("Current session: 42% used"); None if it can't be read
     # '/usage' is a local command, so this makes no model call and uses no tokens
+    global usage_reading
+    if time.time() - usage_reading[1] < USAGE_CHECK_INTERVAL:
+        return usage_reading[0]
     try:
         result = subprocess.run(["claude", "-p", "/usage"], capture_output=True, text=True, timeout=120)
+        match = re.search(r"Current session: (\d+)% used", result.stdout)
+        usage = int(match.group(1)) if match else None
     except (subprocess.SubprocessError, OSError):
-        return None
-    match = re.search(r"Current session: (\d+)% used", result.stdout)
-    return int(match.group(1)) if match else None
+        usage = None
+    usage_reading = (usage, time.time())
+    return usage
 
 last_cli = None # Which CLI the previous step chose, so the log notes each switch
 
