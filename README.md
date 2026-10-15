@@ -14,7 +14,7 @@ Each PI gets at most one email. For every PI in the CSV (a PI can have several p
 Each career-ops step runs headlessly. Before each step the script checks your Claude 5-hour usage with `claude -p /usage`, a local command that uses no tokens. A reading takes about 20s, so it's reused for `USAGE_CHECK_INTERVAL` (5 min), and usage can go a few percent past the cap before the switch:
 
 - **Below `CLAUDE_USAGE_CAP` (90%):** the step runs through the `claude` CLI (`claude -p`, with `CLAUDE_MODEL`), using your Claude subscription. If Claude fails, the same step runs through Antigravity instead.
-- **At or above the cap, or if the usage can't be read:** the step runs through Antigravity CLI (`agy -p`, with `AGY_MODEL`), using your Google AI Pro login. Claude isn't used even as a fallback, so the rest of your Claude limit stays free for your own use. Once the 5-hour window resets, steps go back to Claude.
+- **At or above the cap, or if the usage can't be read:** the step runs through Antigravity CLI (`agy -p`, with `AGY_MODEL`), using whichever account `agy` is signed in with. Claude isn't used even as a fallback, so the rest of your Claude limit stays free for your own use. Once the 5-hour window resets, steps go back to Claude.
 
 The log notes each switch, for example `Claude 5-hour usage 91% (cap 90%): using Antigravity (Gemini) from here`. No API keys are needed. Antigravity has no per-tool allow list, so it runs with all permissions (`--dangerously-skip-permissions`).
 
@@ -40,7 +40,7 @@ All other paths in `main.py` are relative to the `automatic_mailer` folder, so t
 
 ### 2. Antigravity CLI, Claude CLI and career-ops
 
-- Install Antigravity CLI (`curl -fsSL https://antigravity.google/cli/install.sh | bash`), run `agy` once and sign in with Google OAuth using the account that has Google AI Pro. Over SSH it prints a link and asks for the code the browser shows.
+- Install Antigravity CLI (`curl -fsSL https://antigravity.google/cli/install.sh | bash`), run `agy` once and sign in. Choose "Google OAuth" to use a Google AI Pro account's quota, or "Use a Google Cloud project" to bill the usage per token to a project. `/logout` inside `agy` switches accounts. Over SSH it prints a link and asks for the code the browser shows.
 - Install Claude Code (`npm install -g @anthropic-ai/claude-code`), run `claude` once and log in with `/login`.
 - Clone [career-ops](https://github.com/career-ops-hq/career-ops) next to this repo and set it up following its README: `npm install`, `npx playwright install chromium` (needed for the PDF CVs), then add your CV and profile.
 
