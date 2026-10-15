@@ -103,4 +103,13 @@ caffeinate -i .venv/bin/python -u main.py 2>&1 | tee -a run.log
 
 If the run stops for any reason, run the same command again and it continues where it left off.
 
+**Two workers side by side:** `main.py <worker> <workers>` runs one of several workers, and each takes every `<workers>`-th PI starting at `<worker>`. They never handle the same PI, and they share `progress.json`: each save locks it and updates only that worker's rows. Give each worker its own tmux session and log:
+
+```bash
+tmux new-session -d -s mailer  ".venv/bin/python -u main.py 0 2 2>&1 | tee -a run.log"
+tmux new-session -d -s mailer2 ".venv/bin/python -u main.py 1 2 2>&1 | tee -a run-worker1.log"
+```
+
+Both workers draw on the same Claude and Google limits, so they reach the usage cap twice as fast. Run every worker from `0` to `<workers>-1`, otherwise the missing worker's PIs are never processed.
+
 **Possible duplicate email:** if the connection drops right after Gmail accepts an email but before its reply arrives, the retry can send that email twice.

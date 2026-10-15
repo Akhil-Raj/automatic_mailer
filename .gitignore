@@ -7,3 +7,4 @@ progress.json.tmp
 *.log
 __pycache__/
 .venv/
+progress.json.lock

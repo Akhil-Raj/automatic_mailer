@@ -12,6 +12,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import subprocess
 import os
+import sys
+import fcntl
 import re
 import json
 from docx import Document
@@ -107,12 +109,18 @@ def load_progress():
     with open(PROGRESS_FILE) as f:
         return json.load(f)
 
-def save_progress(progress):
-    # Write to a temp file then rename, so a crash mid-write can't corrupt the progress file
-    tmp_path = PROGRESS_FILE + '.tmp'
-    with open(tmp_path, 'w') as f:
-        json.dump(progress, f, indent=2)
-    os.replace(tmp_path, PROGRESS_FILE)
+def save_progress(progress, *indexes):
+    # Saves the given rows. Several workers can share the progress file, so under a lock it is re-read and only these rows
+    # are updated, keeping the other workers' rows. Write to a temp file then rename, so a crash mid-write can't corrupt it
+    with open(PROGRESS_FILE + '.lock', 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX) # released when the lock file closes
+        saved = load_progress()
+        for index in indexes:
+            saved[str(index)] = progress[str(index)]
+        tmp_path = PROGRESS_FILE + '.tmp'
+        with open(tmp_path, 'w') as f:
+            json.dump(saved, f, indent=2)
+        os.replace(tmp_path, PROGRESS_FILE)
 
 def create_message(sender, to, subject, message_text, resume_attachment):
     message = MIMEMultipart()
@@ -243,19 +251,22 @@ def score_project(index, row, progress):
         # Out of retries (e.g. a long outage): note it and move on; the next run picks this row up again
         print(f"Giving up on row {index} for now: {error}")
         progress[str(index)] = {"status": "failed", "error": str(error)}
-        save_progress(progress)
+        save_progress(progress, index)
         return None
     print(f"Fit score {score}/5 for '{row['Title']}' (career-ops report {report_num})")
     if report_num is None: # career-ops wrote no report, so the score is unknown; retry on the next run
         print(f"No career-ops report for row {index}; marking it failed")
         progress[str(index)] = {"status": "failed", "error": "career-ops produced no report"}
-        save_progress(progress)
+        save_progress(progress, index)
         return None
     progress[str(index)] = {"status": "scored", "report": report_num, "score": score}
-    save_progress(progress)
+    save_progress(progress, index)
     return report_num, score
 
 def main():
+    # 'main.py <worker> <workers>' runs one of several workers side by side (e.g. 'main.py 0 2' and 'main.py 1 2'); each takes
+    # every <workers>-th PI starting at <worker>, so no two workers handle the same PI. Without arguments, one worker does all
+    worker, workers = (int(sys.argv[1]), int(sys.argv[2])) if len(sys.argv) > 2 else (0, 1)
     service = get_gmail_service()
     df = pd.read_csv(CSV_FILE_PATH, encoding="ISO-8859-1") # change encoding if required
 
@@ -268,7 +279,9 @@ def main():
 
     # Each PI gets at most one email, about whichever of their projects scores highest
     pi_emails = df['PIEmailAddress'].str.strip().str.lower() # change as per your needs
-    for _, projects in df.groupby(pi_emails, sort=False):
+    for number, (_, projects) in enumerate(df.groupby(pi_emails, sort=False)):
+        if number % workers != worker:
+            continue # another worker's PI
         if any(progress.get(str(index), {}).get("status") == "sent" for index in projects.index):
             continue # this PI was already emailed in an earlier run
         scores = {index: score_project(index, row, progress) for index, row in projects.iterrows()}
@@ -277,10 +290,10 @@ def main():
 
         best = max(scores, key=lambda index: scores[index][1])
         report_num, score = scores[best]
-        for index, (report, project_score) in scores.items():
-            if index != best or score < MIN_FIT_SCORE:
-                progress[str(index)] = {"status": "skipped", "report": report, "score": project_score}
-        save_progress(progress)
+        skipped = [index for index in scores if index != best or score < MIN_FIT_SCORE]
+        for index in skipped:
+            progress[str(index)] = {"status": "skipped", "report": scores[index][0], "score": scores[index][1]}
+        save_progress(progress, *skipped)
         if score < MIN_FIT_SCORE:
             continue
 
@@ -301,12 +314,12 @@ def main():
                 service = get_gmail_service(force_login=True)
                 message_id = with_retries(send_message, service, 'me', message)
             progress[str(best)] = {"status": "sent", "report": report_num, "score": score, "message_id": message_id}
-            save_progress(progress)
+            save_progress(progress, best)
         except TRANSIENT_ERRORS as error:
             # Out of retries (e.g. a long outage): note it and move on; the next run retries this PI, reusing the scores
             print(f"Giving up on row {best} for now: {error}")
             progress[str(best)] = {"status": "failed", "report": report_num, "score": score, "error": str(error)}
-            save_progress(progress)
+            save_progress(progress, best)
 
 if __name__ == '__main__':
     main()
