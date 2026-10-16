@@ -112,4 +112,10 @@ tmux new-session -d -s mailer2 ".venv/bin/python -u main.py 1 2 2>&1 | tee -a ru
 
 Both workers draw on the same Claude and Google limits, so they reach the usage cap twice as fast. Run every worker from `0` to `<workers>-1`, otherwise the missing worker's PIs are never processed.
 
+**Keeping run history small:** every headless `claude -p` and `agy -p` run saves its full history (Claude's transcript, Antigravity's conversation and log), about 1 MB each. Left alone, it fills the disk and slows down `/usage`, which scans the transcripts. `prune-run-history.sh` keeps only the newest 50 runs of each, for looking into errors (set `KEEP` to change that), and deletes the rest. Run it from cron:
+
+```bash
+(crontab -l 2>/dev/null; echo '*/15 * * * * $HOME/automatic_mailer/prune-run-history.sh') | crontab -
+```
+
 **Possible duplicate email:** if the connection drops right after Gmail accepts an email but before its reply arrives, the retry can send that email twice.
