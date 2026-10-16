@@ -33,6 +33,7 @@ CLAUDE_EFFORT = "medium" # Reasoning effort for the claude CLI ("low", "medium",
 AGY_MODEL = "gemini-3.8-flash-medium" # Model for Antigravity CLI (agy), used once Claude's 5-hour usage reaches CLAUDE_USAGE_CAP; uses whichever account agy is signed in with (a Google AI Pro account, or a Google Cloud project billed per token). 'agy models' lists the options
 CLAUDE_USAGE_CAP = 90 # % of Claude's 5-hour limit from which steps go to Antigravity instead, leaving the rest for your own Claude use
 USAGE_CHECK_INTERVAL = 300 # Seconds a Claude usage reading is reused; a reading takes ~20s, too slow to repeat before every step
+USAGE_TIMEOUT = 300 # Seconds a usage reading may take; '/usage' scans the local Claude transcripts, so it slows as they pile up (~80s at 1 GB)
 SENDER_EMAIL_ID = 'ar2427@cornell.edu'
 TOKEN_FILE = os.path.join(SCRIPT_DIR, 'token.json') # Saved Gmail login, so restarts don't need the browser. Delete it to log in again
 PROGRESS_FILE = os.path.join(SCRIPT_DIR, 'progress.json') # Which rows are done; rerunning the script resumes from here. Delete it to start over from row 0
@@ -156,11 +157,13 @@ def claude_usage():
     if time.time() - usage_reading[1] < USAGE_CHECK_INTERVAL:
         return usage_reading[0]
     try:
-        result = subprocess.run(["claude", "-p", "/usage"], capture_output=True, text=True, timeout=120)
+        result = subprocess.run(["claude", "-p", "/usage"], capture_output=True, text=True, timeout=USAGE_TIMEOUT)
         match = re.search(r"Current session: (\d+)% used", result.stdout)
         usage = int(match.group(1)) if match else None
     except (subprocess.SubprocessError, OSError):
         usage = None
+    if usage is None and usage_reading[0] is not None and time.time() - usage_reading[1] < 1800:
+        return usage_reading[0] # a failed read keeps the last good one (up to 30 min old) rather than switching to Antigravity
     usage_reading = (usage, time.time())
     return usage
 
